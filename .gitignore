@@ -1,0 +1,42 @@
+# Secrets — ne JAMAIS commiter
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+google-services.json
+
+# Dépendances et build
+node_modules/
+.expo/
+dist/
+web-build/
+*.tsbuildinfo
+
+# Dossiers natifs régénérés (workflow managed Expo — voir docs/engineering/git-et-ci.md)
+android/
+ios/
+
+# Bases de données locales
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Dumps de données alimentaires (plusieurs Go — voir docs/architecture/food-data-pipeline.md)
+tools/build-seed-db/dumps/
+
+# Tests et couverture
+coverage/
+.maestro/logs/
+
+# Outillage
+.eslintcache
+.husky/_/
+
+# Système et éditeurs
+.DS_Store
+*.log
+.idea/
+.vscode/*
+!.vscode/settings.json

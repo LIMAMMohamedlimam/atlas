@@ -1,0 +1,9 @@
+node_modules/
+.expo/
+dist/
+android/
+ios/
+coverage/
+src/data/db/migrations/
+docs/
+*.md

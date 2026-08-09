@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Lint, types, tests
+    runs-on: ubuntu-latest
+    # Budget : < 3 min. Au-delà, on cesse d'attendre la CI et elle ne sert plus à rien.
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Tests
+        run: npm run test:ci
+
+      - name: Vérifier que les migrations sont à jour
+        # Échoue si le schéma a changé sans qu'une migration ait été générée.
+        run: |
+          npm run db:generate
+          if ! git diff --quiet -- src/data/db/migrations; then
+            echo "::error::Le schéma a changé sans migration. Lance 'npm run db:generate' et commite le résultat."
+            git --no-pager diff --stat -- src/data/db/migrations
+            exit 1
+          fi
