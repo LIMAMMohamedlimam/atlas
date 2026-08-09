@@ -4,9 +4,12 @@ Ce fichier est lu automatiquement par Claude Code au démarrage de chaque sessio
 
 ## Contexte
 
-App mobile Android de nutrition + musculation. **React Native + Expo, TypeScript strict, SQLite local via Drizzle ORM, aucun backend.**
+App mobile Android de nutrition + musculation. **React Native + Expo (SDK 57), TypeScript strict, SQLite local via Drizzle ORM, aucun backend.**
 
-Phase actuelle : **documentation**. Il n'y a pas encore de code. Ne pas créer de fichiers source tant qu'un jalon de `docs/plan/roadmap.md` n'a pas été explicitement ouvert.
+Jalon courant : **M1 — journal nutritionnel manuel** (voir `docs/plan/roadmap.md`).
+M0 (fondations) est livré : navigation, base de données, migrations, tests, lint, CI.
+
+Ne pas implémenter au-delà du jalon courant. Une idée hors périmètre va dans `docs/plan/backlog.md`.
 
 ## Langue
 
@@ -50,15 +53,35 @@ Phase actuelle : **documentation**. Il n'y a pas encore de code. Ne pas créer d
 - Si un objectif calorique calculé descend sous un seuil de sécurité (voir `SPEC-003`), afficher un avertissement clair. Ne jamais proposer de déficit agressif par défaut.
 - Aucun conseil médical. Bandeau d'avertissement dans l'onboarding et les paramètres.
 
-## Commandes (à mettre à jour quand le projet sera initialisé)
+## Commandes
 
 ```bash
-# pas encore disponibles — phase documentation
-npm run lint          # ESLint + Prettier
 npm run typecheck     # tsc --noEmit
-npm run test          # Jest + Testing Library
-npm run db:generate   # génère une migration Drizzle depuis le schéma
+npm run lint          # ESLint (frontières de couches comprises), 0 warning toléré
+npm run format        # Prettier
+npm test              # tous les projets Jest
+npm run test:domain   # domaine pur uniquement, < 1 s — à lancer en boucle
+npm run test:ci       # avec couverture et seuils bloquants
+npm run db:generate   # génère une migration Drizzle depuis src/data/db/schema.ts
+npm start             # Metro (nécessite un development build installé)
+npx expo export --platform android   # vérifie que tout bundle, sans appareil
+npx expo-doctor       # vérifie la cohérence des versions du SDK
 ```
+
+## Structure réelle
+
+```
+src/domain/     TS pur, aucun React ni SQLite (vide, se remplit en M1)
+src/data/db/    schema.ts + client.ts + migrations/ — accès interdit depuis l'UI
+src/data/repositories/  seul point d'accès aux données depuis l'app
+src/features/   composants et hooks métier, par domaine
+src/ui/         composants génériques + theme/ (jetons de design)
+src/lib/        units/, date/, id/, i18n/ — socles testés à 100 %
+src/app/        écrans Expo Router
+```
+
+Les frontières entre ces dossiers sont **appliquées par ESLint**
+(`import/no-restricted-paths` dans `eslint.config.js`), pas seulement par convention.
 
 ## Définition de « terminé »
 

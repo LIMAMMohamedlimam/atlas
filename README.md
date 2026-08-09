@@ -11,11 +11,30 @@ Application mobile **offline-first** qui combine :
 
 | | |
 |---|---|
-| Phase actuelle | **Conception** — documentation seulement, pas encore de code |
+| Jalon livré | **M0 — Fondations** (`v0.1.0`) |
+| Jalon en cours | M1 — journal nutritionnel manuel |
 | Plateforme cible v1 | Android (iOS possible plus tard, la stack le permet) |
-| Stack | React Native + Expo, TypeScript strict, SQLite local (Drizzle ORM) |
+| Stack | React Native + Expo SDK 57, TypeScript strict, SQLite local (Drizzle ORM) |
 | Backend | Aucun en v1 — tout est local sur l'appareil |
 | Sources nutritionnelles | Open Food Facts + USDA FoodData Central + saisie manuelle |
+
+## Démarrer
+
+```bash
+npm install
+npm run test:domain     # tests du socle, moins d'une seconde
+npm start               # nécessite un development build (voir plus bas)
+```
+
+L'application utilise des modules natifs (SQLite, caméra à venir) : **Expo Go ne suffit pas**,
+il faut un *development build*. Construction dans le cloud, sans SDK Android local :
+
+```bash
+npx eas login
+npx eas build --profile development --platform android
+```
+
+L'APK produit s'installe sur le téléphone, puis `npm start` s'y connecte.
 
 ## Par où commencer
 
