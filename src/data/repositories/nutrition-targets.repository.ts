@@ -100,15 +100,21 @@ export const createNutritionTargetsRepository = (deps: RepositoryDeps) => ({
    * doit rester utilisable sans objectif (SPEC-003 §6).
    */
   forDay(day: LocalDay): TargetRecord | undefined {
-    const [row] = deps.db
+    const [row] = this.forDayQuery(day).all();
+    return row as TargetRecord | undefined;
+  },
+
+  /**
+   * Même requête, NON exécutée : la racine est la table `nutrition_targets`, donc
+   * compatible `useLiveQuery` (l'objectif se rafraîchit quand on le modifie).
+   */
+  forDayQuery(day: LocalDay) {
+    return deps.db
       .select(TARGET_COLUMNS)
       .from(nutritionTargets)
       .where(and(lte(nutritionTargets.effectiveFrom, day), isNull(nutritionTargets.deletedAt)))
       .orderBy(desc(nutritionTargets.effectiveFrom), desc(nutritionTargets.createdAt))
-      .limit(1)
-      .all();
-
-    return row as TargetRecord | undefined;
+      .limit(1);
   },
 
   /** Objectif courant, c'est-à-dire celui applicable aujourd'hui. */

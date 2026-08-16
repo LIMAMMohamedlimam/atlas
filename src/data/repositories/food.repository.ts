@@ -26,6 +26,8 @@ export type CreateCustomFoodInput = {
   readonly brand?: string | null;
   readonly baseUnit: 'g' | 'ml';
   readonly nutrition: NutritionPer100;
+  /** RG-6 SPEC-001 : kcal recalculées depuis les macros, faute de valeur source. */
+  readonly energyIsEstimated?: boolean;
 };
 
 /** Vue d'un aliment : uniquement les colonnes dont M1 se sert (pas de `SELECT *`). */
@@ -84,6 +86,7 @@ export const createFoodRepository = (deps: RepositoryDeps) => ({
         saturatedFatG: input.nutrition.saturatedFatG ?? null,
         fiberG: input.nutrition.fiberG ?? null,
         saltG: input.nutrition.saltG ?? null,
+        energyIsEstimated: input.energyIsEstimated ? 1 : 0,
         isVerified: 1,
         createdAt: timestamp,
         updatedAt: timestamp,

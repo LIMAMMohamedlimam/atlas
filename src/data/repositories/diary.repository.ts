@@ -201,8 +201,12 @@ export const createDiaryRepository = (deps: RepositoryDeps) => ({
    * ADR-0005 : le recalcul part de l'aliment COURANT — si la fiche a changé, la
    * nouvelle quantité reflète les valeurs actuelles (« recalculé avec les valeurs
    * actuelles »). Le figement protège l'historique, pas la quantité modifiée.
+   *
+   * Retourne `true` si le snapshot a été recalculé depuis la fiche courante
+   * (l'UI affiche alors `diary.recalculatedNote`), `false` s'il y a eu repli sur
+   * la mise à l'échelle des valeurs figées (saisie manuelle ou aliment supprimé).
    */
-  updateQuantity(id: string, quantity: number, unit: string, grams: number): void {
+  updateQuantity(id: string, quantity: number, unit: string, grams: number): boolean {
     const [current] = deps.db
       .select({
         foodId: diaryEntries.foodId,
@@ -221,7 +225,7 @@ export const createDiaryRepository = (deps: RepositoryDeps) => ({
       .limit(1)
       .all();
 
-    if (!current || current.grams === 0) return;
+    if (!current || current.grams === 0) return false;
 
     const ratio = grams / current.grams;
 
@@ -271,6 +275,19 @@ export const createDiaryRepository = (deps: RepositoryDeps) => ({
       .run();
 
     recordChange(deps, 'diary_entries', id, 'update');
+    return food !== undefined;
+  },
+
+  /** Une entrée par identifiant, active uniquement. `undefined` si introuvable. */
+  getById(id: string): DiaryEntryRecord | undefined {
+    const [row] = deps.db
+      .select(ENTRY_COLUMNS)
+      .from(diaryEntries)
+      .where(and(eq(diaryEntries.id, id), isNull(diaryEntries.deletedAt)))
+      .limit(1)
+      .all();
+
+    return row as DiaryEntryRecord | undefined;
   },
 
   /** CA-5 — Suppression LOGIQUE : l'entrée disparaît de l'écran, pas de la base. */
