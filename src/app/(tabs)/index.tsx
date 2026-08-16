@@ -1,8 +1,7 @@
-import { useTranslation } from 'react-i18next';
-
-import { ScreenPlaceholder } from '@/ui/components/screen-placeholder';
+import { DiaryDayScreen } from '@/features/diary/DiaryDayScreen';
+import { useDiaryDayStore } from '@/stores/diary-day';
 
 export default function DiaryScreen() {
-  const { t } = useTranslation();
-  return <ScreenPlaceholder title={t('diary.title')} message={t('diary.placeholder')} />;
+  const day = useDiaryDayStore((state) => state.day);
+  return <DiaryDayScreen day={day} />;
 }
