@@ -2,9 +2,12 @@
  * Tests d'intégration du journal — SPEC-001.
  * Base SQLite en mémoire, migrations réelles, recréée à chaque test.
  */
+import { eq } from 'drizzle-orm';
+
+import { sumEntries } from '@/domain/nutrition/macros';
 import { localDay } from '@/lib/date';
 
-import { syncOutbox } from '../db/schema';
+import { foods, syncOutbox } from '../db/schema';
 
 import { createTestContext, type TestContext } from './__fixtures__/test-database';
 import { createDiaryRepository } from './diary.repository';
@@ -140,15 +143,53 @@ describe('modification de quantité (CA-4)', () => {
     expect(entry?.carbsG).toBeCloseTo(84, 6);
   });
 
-  it('recalcule depuis les valeurs FIGÉES, pas depuis la fiche produit modifiée', () => {
-    // Le piège : si le recalcul relisait `foods`, on obtiendrait 400 kcal.
+  it('recalcule depuis l’aliment courant, pas depuis les valeurs figées (ADR-0005)', () => {
+    // ADR-0005 : la fiche passée à 200 kcal/100 g, 150 g → 200 g donne 400 kcal.
     const rice = createRice();
     const id = addRice(rice);
     food.updateNutrition(rice, { energyKcal: 200, proteinG: 2.7, carbsG: 28, fatG: 0.3 });
 
     diary.updateQuantity(id, 200, 'g', 200);
 
-    expect(diary.listByDay(DAY)[0]?.kcal).toBeCloseTo(260, 6);
+    expect(diary.listByDay(DAY)[0]?.kcal).toBeCloseTo(400, 6);
+  });
+
+  it('repli : met à l’échelle les valeurs figées quand foodId est null', () => {
+    diary.add({
+      day: DAY,
+      mealSlot: 'snack',
+      foodId: null,
+      quantity: 150,
+      unit: 'g',
+      grams: 150,
+      foodName: 'Plat saisi à la main',
+      nutrition: { kcal: 195, proteinG: 5, carbsG: 30, fatG: 2 },
+    });
+    const id = diary.listByMeal(DAY, 'snack')[0]?.id as string;
+
+    diary.updateQuantity(id, 300, 'g', 300);
+
+    const entry = diary.listByMeal(DAY, 'snack')[0];
+    expect(entry?.kcal).toBeCloseTo(390, 6);
+    expect(entry?.proteinG).toBeCloseTo(10, 6);
+  });
+
+  it('repli : met à l’échelle les valeurs figées quand l’aliment a été supprimé', () => {
+    const rice = createRice();
+    const id = addRice(rice);
+
+    // Suppression logique directe : le repository des aliments n'expose pas de
+    // suppression en M1, mais une fiche marquée supprimée doit déclencher le repli.
+    context.deps.db
+      .update(foods)
+      .set({ deletedAt: context.deps.now() })
+      .where(eq(foods.id, rice))
+      .run();
+
+    diary.updateQuantity(id, 300, 'g', 300);
+
+    // Aucune fiche à relire → repli sur les valeurs figées : 195 → 390 kcal.
+    expect(diary.listByDay(DAY)[0]?.kcal).toBeCloseTo(390, 6);
   });
 
   it('laisse les macros inconnues inconnues, sans les transformer en 0', () => {
@@ -245,6 +286,40 @@ describe('totaux du jour (RG-7)', () => {
       fatG: 0,
       hasIncompleteData: false,
     });
+  });
+
+  it('donne le même résultat que sumEntries (domaine) sur les mêmes entrées', () => {
+    const rice = createRice();
+    addRice(rice, 100);
+    diary.add({
+      day: DAY,
+      mealSlot: 'breakfast',
+      foodId: rice,
+      quantity: 50,
+      unit: 'g',
+      grams: 50,
+      foodName: 'Riz basmati cuit',
+      nutrition: { kcal: 65, proteinG: 1.35, carbsG: 14, fatG: 0.15 },
+    });
+    diary.add({
+      day: DAY,
+      mealSlot: 'snack',
+      foodId: null,
+      quantity: 1,
+      unit: 'g',
+      grams: 100,
+      foodName: 'Plat sans détail',
+      nutrition: { kcal: 300, proteinG: null, carbsG: null, fatG: null },
+    });
+
+    const fromDomain = sumEntries(diary.listByDay(DAY));
+    const fromSql = diary.totalsForDay(DAY);
+
+    expect(fromDomain.kcal).toBeCloseTo(fromSql.kcal, 6);
+    expect(fromDomain.proteinG).toBeCloseTo(fromSql.proteinG, 6);
+    expect(fromDomain.carbsG).toBeCloseTo(fromSql.carbsG, 6);
+    expect(fromDomain.fatG).toBeCloseTo(fromSql.fatG, 6);
+    expect(fromDomain.hasIncompleteData).toBe(fromSql.hasIncompleteData);
   });
 });
 

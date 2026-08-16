@@ -8,16 +8,20 @@
  *   RG-5 — Rien n'est effacé physiquement : `deleted_at` permet l'annulation
  *          (CA-5) et la synchronisation future.
  *
- * Conséquence sur `updateQuantity` : le recalcul repart des valeurs FIGÉES de
- * l'entrée, jamais de la fiche produit actuelle. C'est ce qui permet à CA-3
- * (fiche modifiée → entrée inchangée) et CA-4 (quantité modifiée → kcal
- * recalculées) de coexister.
+ * Conséquence sur `updateQuantity` (ADR-0005) : modifier la quantité RECALCULE
+ * le snapshot à partir de l'aliment courant — cas limite documenté « recalculé
+ * avec les valeurs actuelles ». Le figement protège l'historique contre les
+ * changements de fiche ; il ne fige pas la quantité elle-même. À défaut de
+ * référence relisible (saisie manuelle ou aliment supprimé), on replie sur la
+ * mise à l'échelle des valeurs figées de l'entrée.
  */
 import { and, eq, isNull, sql } from 'drizzle-orm';
 
+import { snapshotFrom, type EntryNutritionSnapshot } from '@/domain/nutrition/macros';
+
 import type { LocalDay } from '@/lib/date';
 
-import { diaryEntries } from '../db/schema';
+import { diaryEntries, foods } from '../db/schema';
 
 import { recordChange, type RepositoryDeps } from './shared';
 
@@ -94,19 +98,39 @@ const ENTRY_COLUMNS = {
   fatG: diaryEntries.fatG,
 } as const;
 
+/** Colonnes nutritionnelles d'un aliment, pour 100 g/ml — relues lors d'un recalcul. */
+const FOOD_NUTRITION_COLUMNS = {
+  energyKcal: foods.energyKcal,
+  proteinG: foods.proteinG,
+  carbsG: foods.carbsG,
+  fatG: foods.fatG,
+  sugarsG: foods.sugarsG,
+  saturatedFatG: foods.saturatedFatG,
+  fiberG: foods.fiberG,
+  saltG: foods.saltG,
+} as const;
+
 /** Met une valeur figée à l'échelle d'une nouvelle quantité, sans relire l'aliment. */
 const rescale = (value: number | null, ratio: number): number | null =>
   value === null ? null : value * ratio;
 
 export const createDiaryRepository = (deps: RepositoryDeps) => ({
-  /** Entrées actives d'un jour, dans l'ordre d'affichage du journal. */
-  listByDay(day: LocalDay): DiaryEntryRecord[] {
+  /**
+   * Requête des entrées actives d'un jour, NON exécutée : sa racine est la table
+   * `diaryEntries`, ce qui la rend compatible avec `useLiveQuery` (qui refuse les
+   * sous-requêtes et le SQL brut). Consommée par `useDiaryDay`.
+   */
+  listByDayQuery(day: LocalDay) {
     return deps.db
       .select(ENTRY_COLUMNS)
       .from(diaryEntries)
       .where(and(eq(diaryEntries.day, day), isNull(diaryEntries.deletedAt)))
-      .orderBy(diaryEntries.mealSlot, diaryEntries.sortOrder)
-      .all() as DiaryEntryRecord[];
+      .orderBy(diaryEntries.mealSlot, diaryEntries.sortOrder);
+  },
+
+  /** Entrées actives d'un jour, dans l'ordre d'affichage du journal. */
+  listByDay(day: LocalDay): DiaryEntryRecord[] {
+    return this.listByDayQuery(day).all() as DiaryEntryRecord[];
   },
 
   listByMeal(day: LocalDay, mealSlot: MealSlot): DiaryEntryRecord[] {
@@ -172,19 +196,25 @@ export const createDiaryRepository = (deps: RepositoryDeps) => ({
   },
 
   /**
-   * CA-4 — Change la quantité et mets les valeurs à l'échelle.
+   * CA-4 — Change la quantité et recale le snapshot.
    *
-   * Le ratio part des grammes DÉJÀ enregistrés : l'entrée porte sa propre base
-   * nutritionnelle et n'a pas besoin de relire l'aliment, qui a pu changer depuis.
+   * ADR-0005 : le recalcul part de l'aliment COURANT — si la fiche a changé, la
+   * nouvelle quantité reflète les valeurs actuelles (« recalculé avec les valeurs
+   * actuelles »). Le figement protège l'historique, pas la quantité modifiée.
    */
   updateQuantity(id: string, quantity: number, unit: string, grams: number): void {
     const [current] = deps.db
       .select({
+        foodId: diaryEntries.foodId,
         grams: diaryEntries.grams,
         kcal: diaryEntries.kcal,
         proteinG: diaryEntries.proteinG,
         carbsG: diaryEntries.carbsG,
         fatG: diaryEntries.fatG,
+        sugarsG: diaryEntries.sugarsG,
+        saturatedFatG: diaryEntries.saturatedFatG,
+        fiberG: diaryEntries.fiberG,
+        saltG: diaryEntries.saltG,
       })
       .from(diaryEntries)
       .where(and(eq(diaryEntries.id, id), isNull(diaryEntries.deletedAt)))
@@ -195,16 +225,46 @@ export const createDiaryRepository = (deps: RepositoryDeps) => ({
 
     const ratio = grams / current.grams;
 
+    // Pourquoi ce repli : une saisie manuelle (foodId = null) ou un aliment
+    // supprimé du catalogue n'ont rien à relire. On retombe alors sur la mise à
+    // l'échelle des valeurs FIGÉES — c'est le seul cas où le snapshot ne vient
+    // pas de l'aliment courant (ADR-0005 ne couvre pas ce cas, on le documente).
+    const food = current.foodId
+      ? deps.db
+          .select(FOOD_NUTRITION_COLUMNS)
+          .from(foods)
+          .where(and(eq(foods.id, current.foodId), isNull(foods.deletedAt)))
+          .limit(1)
+          .all()[0]
+      : undefined;
+
+    const snapshot: EntryNutritionSnapshot = food
+      ? snapshotFrom(food, grams)
+      : {
+          kcal: current.kcal * ratio,
+          proteinG: rescale(current.proteinG, ratio),
+          carbsG: rescale(current.carbsG, ratio),
+          fatG: rescale(current.fatG, ratio),
+          sugarsG: rescale(current.sugarsG, ratio),
+          saturatedFatG: rescale(current.saturatedFatG, ratio),
+          fiberG: rescale(current.fiberG, ratio),
+          saltG: rescale(current.saltG, ratio),
+        };
+
     deps.db
       .update(diaryEntries)
       .set({
         quantity,
         unit,
         grams,
-        kcal: current.kcal * ratio,
-        proteinG: rescale(current.proteinG, ratio),
-        carbsG: rescale(current.carbsG, ratio),
-        fatG: rescale(current.fatG, ratio),
+        kcal: snapshot.kcal,
+        proteinG: snapshot.proteinG,
+        carbsG: snapshot.carbsG,
+        fatG: snapshot.fatG,
+        sugarsG: snapshot.sugarsG,
+        saturatedFatG: snapshot.saturatedFatG,
+        fiberG: snapshot.fiberG,
+        saltG: snapshot.saltG,
         updatedAt: deps.now(),
       })
       .where(eq(diaryEntries.id, id))
