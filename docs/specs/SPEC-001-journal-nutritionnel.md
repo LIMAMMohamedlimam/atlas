@@ -174,4 +174,4 @@ Interactions : balayage horizontal entre jours ; balayage vers la gauche sur une
 ## 10. Questions ouvertes
 
 - [ ] 2026-08-09 — Faut-il permettre de renommer ou d'ajouter des créneaux de repas ? *Proposition : non en v1, RG-1 fige les 4 créneaux.*
-- [ ] 2026-08-09 — Afficher les fibres et le sel dans le résumé du jour, ou seulement dans le détail ?
+- [x] 2026-08-09 — Afficher les fibres et le sel dans le résumé du jour, ou seulement dans le détail ? → **Détail seulement** (décidé le 2026-08-16). Les colonnes `fiber_g` et `salt_g` sont bien stockées sur `foods` et `diary_entries` dès la migration `0001` : la décision ne porte que sur l'affichage, et reste donc réversible sans migration.
