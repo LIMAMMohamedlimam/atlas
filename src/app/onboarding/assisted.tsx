@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import {
   appSettingsRepository,
@@ -16,7 +16,7 @@ import {
   type Sex,
 } from '@/domain/nutrition/energy';
 import { computeGoalPlan } from '@/domain/nutrition/goals';
-import { formatKcal, formatMacro } from '@/features/diary/format';
+import { formatKcal } from '@/features/diary/format';
 import { ONBOARDING_COMPLETED_KEY } from '@/features/onboarding/hooks/use-onboarding-status';
 import { todayLocalDay } from '@/lib/date';
 import { parseDecimal } from '@/lib/number';
@@ -39,6 +39,23 @@ export default function OnboardingAssistedScreen() {
   const [activity, setActivity] = useState<ActivityLevel>('sedentary');
   const [goal, setGoal] = useState<GoalType>('maintain');
   const [error, setError] = useState<string | null>(null);
+
+  /**
+   * Le calcul propose, l'utilisateur dispose : les quatre valeurs du récapitulatif
+   * sont modifiables avant validation. Une chaîne vide signifie « non retouché »,
+   * donc la valeur calculée fait foi.
+   *
+   * Toute modification du profil réinitialise ces retouches : garder un objectif
+   * saisi pour un poids qui vient de changer produirait un plan incohérent.
+   */
+  const [overrides, setOverrides] = useState({ kcal: '', protein: '', carbs: '', fat: '' });
+  const resetOverrides = () => setOverrides({ kcal: '', protein: '', carbs: '', fat: '' });
+  const withReset =
+    <T,>(setter: (value: T) => void) =>
+    (value: T) => {
+      setter(value);
+      resetOverrides();
+    };
 
   const birthYearValue = parseDecimal(birthYear);
   const heightCm = parseDecimal(height);
@@ -87,6 +104,31 @@ export default function OnboardingAssistedScreen() {
     { value: 'gain_moderate', label: t('onboarding.goal_gain_moderate') },
   ];
 
+  /** Valeurs réellement enregistrées : la retouche si elle existe, sinon le calcul. */
+  const effective =
+    plan === null
+      ? null
+      : {
+          kcal: parseDecimal(overrides.kcal) ?? plan.target.kcal,
+          proteinG: parseDecimal(overrides.protein) ?? plan.macros.proteinG,
+          carbsG: parseDecimal(overrides.carbs) ?? plan.macros.carbsG,
+          fatG: parseDecimal(overrides.fat) ?? plan.macros.fatG,
+        };
+
+  const isEdited =
+    plan !== null &&
+    effective !== null &&
+    (effective.kcal !== plan.target.kcal ||
+      effective.proteinG !== plan.macros.proteinG ||
+      effective.carbsG !== plan.macros.carbsG ||
+      effective.fatG !== plan.macros.fatG);
+
+  /** Affiche la retouche en cours, ou la valeur calculée tant qu'il n'y en a pas. */
+  const fieldValue = (override: string, computed: number): string =>
+    override !== '' ? override : String(Math.round(computed));
+
+  const belowFloor = plan !== null && effective !== null && effective.kcal < plan.target.floorKcal;
+
   const adjustmentLabel = (goalType: GoalType): string => {
     const pct = Math.round(GOAL_ADJUSTMENTS[goalType] * 100);
     return pct > 0 ? `+${pct} %` : `${pct} %`;
@@ -95,6 +137,36 @@ export default function OnboardingAssistedScreen() {
   const finish = () => {
     appSettingsRepository.set(ONBOARDING_COMPLETED_KEY, 'true');
     router.replace('/(tabs)');
+  };
+
+  const save = (belowSafetyFloor: boolean) => {
+    if (plan === null || effective === null) return;
+    if (birthYearValue === null || heightCm === null || weightKg === null) return;
+
+    userProfileRepository.save({
+      birthYear: Math.round(birthYearValue),
+      sex,
+      heightCm,
+      activityLevel: activity,
+      goalType: goal,
+    });
+    bodyMeasurementsRepository.save({ day: todayLocalDay(), weightKg });
+    nutritionTargetsRepository.save({
+      effectiveFrom: todayLocalDay(),
+      kcal: effective.kcal,
+      proteinG: effective.proteinG,
+      carbsG: effective.carbsG,
+      fatG: effective.fatG,
+      // Retouché, le chiffre ne sort plus de la formule : le dire honnêtement
+      // plutôt que de le présenter comme calculé. La traçabilité du calcul
+      // d'origine est conservée ci-dessous quoi qu'il arrive.
+      method: isEdited ? 'manual' : 'calculated',
+      calcBmr: plan.bmr,
+      calcTdee: plan.tdee,
+      calcAdjustmentPct: GOAL_ADJUSTMENTS[goal],
+      belowSafetyFloor,
+    });
+    finish();
   };
 
   const onSubmit = () => {
@@ -110,32 +182,28 @@ export default function OnboardingAssistedScreen() {
       setError(t('onboarding.heightRange'));
       return;
     }
-    if (!plan) return;
+    if (plan === null || effective === null) return;
     if (!plan.assistedAllowed) {
       setError(t('onboarding.under16'));
       return;
     }
-
-    userProfileRepository.save({
-      birthYear: Math.round(birthYearValue),
-      sex,
-      heightCm,
-      activityLevel: activity,
-      goalType: goal,
-    });
-    bodyMeasurementsRepository.save({ day: todayLocalDay(), weightKg });
-    nutritionTargetsRepository.save({
-      effectiveFrom: todayLocalDay(),
-      kcal: plan.target.kcal,
-      proteinG: plan.macros.proteinG,
-      carbsG: plan.macros.carbsG,
-      fatG: plan.macros.fatG,
-      method: 'calculated',
-      calcBmr: plan.bmr,
-      calcTdee: plan.tdee,
-      calcAdjustmentPct: GOAL_ADJUSTMENTS[goal],
-    });
-    finish();
+    if (effective.kcal <= 0) {
+      setError(t('food.energyRequired'));
+      return;
+    }
+    // RG-4 — descendre sous le plancher reste possible, mais jamais par inadvertance.
+    if (belowFloor) {
+      Alert.alert(
+        t('onboarding.safetyWarning', { floor: String(plan.target.floorKcal) }),
+        undefined,
+        [
+          { text: t('common.cancel'), style: 'cancel' },
+          { text: t('onboarding.finish'), onPress: () => save(true) },
+        ],
+      );
+      return;
+    }
+    save(false);
   };
 
   return (
@@ -147,7 +215,7 @@ export default function OnboardingAssistedScreen() {
       <NumberField
         label={t('onboarding.birthYear')}
         value={birthYear}
-        onChangeText={setBirthYear}
+        onChangeText={withReset(setBirthYear)}
         placeholder="1990"
       />
       <View>
@@ -155,33 +223,33 @@ export default function OnboardingAssistedScreen() {
           label={t('onboarding.sex')}
           options={sexOptions}
           value={sex}
-          onChange={setSex}
+          onChange={withReset(setSex)}
         />
         <Text style={[styles.hint, { color: colors.textFaint }]}>{t('onboarding.sexHint')}</Text>
       </View>
       <NumberField
         label={t('onboarding.height')}
         value={height}
-        onChangeText={setHeight}
+        onChangeText={withReset(setHeight)}
         placeholder="180"
       />
       <NumberField
         label={t('onboarding.weight')}
         value={weight}
-        onChangeText={setWeight}
+        onChangeText={withReset(setWeight)}
         placeholder="80"
       />
       <SelectGroup
         label={t('onboarding.activity')}
         options={activityOptions}
         value={activity}
-        onChange={setActivity}
+        onChange={withReset(setActivity)}
       />
       <SelectGroup
         label={t('onboarding.goal')}
         options={goalOptions}
         value={goal}
-        onChange={setGoal}
+        onChange={withReset(setGoal)}
       />
 
       {plan !== null && (
@@ -211,40 +279,36 @@ export default function OnboardingAssistedScreen() {
             </Text>
             <Text style={[styles.recapValue, { color: colors.text }]}>{adjustmentLabel(goal)}</Text>
           </View>
-          <View style={styles.recapRow}>
-            <Text style={[styles.recapLabel, { color: colors.textMuted }]}>
-              {t('onboarding.target')}
-            </Text>
-            <Text style={[styles.recapValue, { color: colors.accent }]}>
-              {formatKcal(plan.target.kcal)} kcal
-            </Text>
-          </View>
-          <View style={styles.recapRow}>
-            <Text style={[styles.recapLabel, { color: colors.textMuted }]}>
-              {t('onboarding.protein')}
-            </Text>
-            <Text style={[styles.recapValue, { color: colors.protein }]}>
-              {formatMacro(plan.macros.proteinG)}
-            </Text>
-          </View>
-          <View style={styles.recapRow}>
-            <Text style={[styles.recapLabel, { color: colors.textMuted }]}>
-              {t('onboarding.carbs')}
-            </Text>
-            <Text style={[styles.recapValue, { color: colors.carbs }]}>
-              {formatMacro(plan.macros.carbsG)}
-            </Text>
-          </View>
-          <View style={styles.recapRow}>
-            <Text style={[styles.recapLabel, { color: colors.textMuted }]}>
-              {t('onboarding.fat')}
-            </Text>
-            <Text style={[styles.recapValue, { color: colors.fat }]}>
-              {formatMacro(plan.macros.fatG)}
-            </Text>
-          </View>
+          <Text style={[styles.hint, { color: colors.textFaint }]}>{t('onboarding.editHint')}</Text>
 
-          {plan.target.wasRaisedToFloor && (
+          <NumberField
+            label={t('onboarding.target')}
+            value={fieldValue(overrides.kcal, plan.target.kcal)}
+            onChangeText={(kcal) => setOverrides((o) => ({ ...o, kcal }))}
+          />
+          <NumberField
+            label={t('onboarding.protein')}
+            value={fieldValue(overrides.protein, plan.macros.proteinG)}
+            onChangeText={(protein) => setOverrides((o) => ({ ...o, protein }))}
+          />
+          <NumberField
+            label={t('onboarding.carbs')}
+            value={fieldValue(overrides.carbs, plan.macros.carbsG)}
+            onChangeText={(carbs) => setOverrides((o) => ({ ...o, carbs }))}
+          />
+          <NumberField
+            label={t('onboarding.fat')}
+            value={fieldValue(overrides.fat, plan.macros.fatG)}
+            onChangeText={(fat) => setOverrides((o) => ({ ...o, fat }))}
+          />
+
+          {effective !== null && effective.proteinG === 0 && (
+            <Text style={[styles.hint, { color: colors.textMuted }]}>
+              {t('onboarding.zeroProtein')}
+            </Text>
+          )}
+
+          {(plan.target.wasRaisedToFloor || belowFloor) && (
             <Text style={[styles.warning, { color: colors.danger }]} accessibilityRole="alert">
               {t('onboarding.safetyWarning', { floor: String(plan.target.floorKcal) })}
             </Text>

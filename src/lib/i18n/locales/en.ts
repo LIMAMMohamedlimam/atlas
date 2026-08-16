@@ -111,6 +111,8 @@ export const en: TranslationKeys = {
       'Assisted calculation is only available to ages 16 and up. Talk to an adult or a health professional.',
     safetyWarning:
       'This target is below the recommended floor of {{floor}} kcal. An aggressive deficit can be dangerous; consult a health professional.',
+    zeroProtein: 'No protein set. That is allowed, but protein helps preserve lean mass.',
+    editHint: 'You can adjust these values before saving.',
     activity_sedentary: 'Sedentary',
     activity_light: 'Lightly active',
     activity_moderate: 'Moderately active',

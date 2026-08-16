@@ -94,6 +94,13 @@ export default function OnboardingManualScreen() {
       <NumberField label={t('onboarding.carbs')} value={carbs} onChangeText={setCarbs} optional />
       <NumberField label={t('onboarding.fat')} value={fat} onChangeText={setFat} optional />
 
+      {/* SPEC-003 §6 — 0 g de protéines : autorisé, mais signalé. On informe, on ne bloque pas. */}
+      {kcalValue !== null && kcalValue > 0 && proteinG === 0 && (
+        <Text style={[styles.hint, { color: colors.textMuted }]}>
+          {t('onboarding.zeroProtein')}
+        </Text>
+      )}
+
       {coherence !== null && !coherence.isCoherent && (
         <Text style={[styles.hint, { color: colors.textMuted }]}>
           {t('goals.coherenceHint', {

@@ -116,6 +116,9 @@ export const fr = {
       'Le calcul assisté est réservé aux 16 ans et plus. Parle-en à un adulte ou à un professionnel de santé.',
     safetyWarning:
       'Cet objectif est sous le seuil recommandé de {{floor}} kcal. Un déficit agressif peut être dangereux ; consulte un professionnel de santé.',
+    zeroProtein:
+      'Aucune protéine renseignée. C’est possible, mais les protéines aident à préserver la masse maigre.',
+    editHint: 'Tu peux ajuster ces valeurs avant de valider.',
     activity_sedentary: 'Sédentaire',
     activity_light: 'Légèrement actif',
     activity_moderate: 'Modérément actif',
