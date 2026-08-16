@@ -6,8 +6,7 @@ import type { TargetRecord } from '@/data/repositories/nutrition-targets.reposit
 import { sumEntries, type DaySummary } from '@/domain/nutrition/macros';
 import type { LocalDay } from '@/lib/date';
 
-/** Les quatre créneaux, dans l'ordre d'affichage du journal (RG-1). */
-export const MEAL_SLOTS: readonly MealSlot[] = ['breakfast', 'lunch', 'dinner', 'snack'];
+import { MEAL_SLOTS } from '../meals';
 
 export type MealGroup = {
   readonly mealSlot: MealSlot;
@@ -26,25 +25,30 @@ export type DiaryDayResult =
     };
 
 /**
- * Journal d'un jour (ADR-0004) : encapsule le repository et la live query.
+ * Journal d'un jour (ADR-0004) : encapsule le repository et les live queries.
  * Les composants ne voient ni SQL ni Drizzle.
  *
  * Contrainte `useLiveQuery` : la racine de la requête doit être une table. On
  * charge donc les entrées via `listByDayQuery(day)`, puis on calcule les totaux
  * avec `sumEntries()` sur les lignes déjà en mémoire — jamais via l'agrégat SQL
- * de `totalsForDay()`, incompatible avec la live query.
+ * de `totalsForDay()`, incompatible avec la live query. L'objectif suit une
+ * SECONDE live query : modifié dans les réglages, le journal se rafraîchit seul.
  */
 export const useDiaryDay = (day: LocalDay): DiaryDayResult => {
-  const { data, error, updatedAt } = useLiveQuery(diaryRepository.listByDayQuery(day), [day]);
+  const entriesQuery = useLiveQuery(diaryRepository.listByDayQuery(day), [day]);
+  const targetQuery = useLiveQuery(nutritionTargetsRepository.forDayQuery(day), [day]);
 
-  if (error) return { state: 'error', error };
+  if (entriesQuery.error) return { state: 'error', error: entriesQuery.error };
+  if (targetQuery.error) return { state: 'error', error: targetQuery.error };
   // `updatedAt` reste indéfini tant que la première lecture n'est pas résolue.
-  if (updatedAt === undefined) return { state: 'loading' };
+  if (entriesQuery.updatedAt === undefined || targetQuery.updatedAt === undefined) {
+    return { state: 'loading' };
+  }
 
-  const totals = sumEntries(data);
-  const target = nutritionTargetsRepository.forDay(day);
+  const totals = sumEntries(entriesQuery.data);
+  const target = targetQuery.data[0];
   const meals = MEAL_SLOTS.map((mealSlot) => {
-    const entries = data.filter((entry) => entry.mealSlot === mealSlot);
+    const entries = entriesQuery.data.filter((entry) => entry.mealSlot === mealSlot);
     return { mealSlot, entries, kcal: sumEntries(entries).kcal };
   });
 

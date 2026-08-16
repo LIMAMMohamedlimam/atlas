@@ -25,7 +25,9 @@ export function MacroRing({ consumedKcal, targetKcal }: Props) {
 
   const remaining = targetKcal - consumedKcal;
   const isOver = remaining < 0;
-  const fraction = Math.min(1, Math.max(0, consumedKcal / targetKcal));
+  // Garde défensive : la validation des objectifs refuse 0/négatif (SPEC-003 §6),
+  // mais on ne laisse jamais une division par zéro produire un anneau cassé (NaN).
+  const fraction = targetKcal > 0 ? Math.min(1, Math.max(0, consumedKcal / targetKcal)) : 0;
 
   const radius = (SIZE - STROKE_WIDTH) / 2;
   const circumference = 2 * Math.PI * radius;

@@ -5,6 +5,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import type { MealSlot } from '@/data/repositories/diary.repository';
 import { spacing, typography, useTheme } from '@/ui/theme';
 
+import { MEAL_TITLE_KEYS } from './meals';
 import { formatKcal } from './format';
 
 type Props = {
@@ -12,13 +13,6 @@ type Props = {
   kcal: number;
   hasEntries: boolean;
 };
-
-const MEAL_TITLE_KEYS = {
-  breakfast: 'diary.breakfast',
-  lunch: 'diary.lunch',
-  dinner: 'diary.dinner',
-  snack: 'diary.snack',
-} as const;
 
 const mealTitle = (mealSlot: MealSlot, t: TFunction): string => t(MEAL_TITLE_KEYS[mealSlot]);
 

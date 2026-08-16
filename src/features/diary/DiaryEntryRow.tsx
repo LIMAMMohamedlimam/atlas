@@ -13,12 +13,13 @@ type Props = {
   amountLabel: string;
   kcal: number;
   onDelete: (id: string) => void;
+  onPress: (id: string) => void;
 };
 
 /**
  * Ligne d'une entrée de journal. `React.memo` : c'est la ligne la plus répétée
  * de l'écran, ses props sont des primitives stables (ou un callback stable).
- * Balayage vers la gauche → suppression (CA-5).
+ * Balayage vers la gauche → suppression (CA-5), appui → modification.
  */
 export const DiaryEntryRow = memo(function DiaryEntryRow({
   id,
@@ -26,6 +27,7 @@ export const DiaryEntryRow = memo(function DiaryEntryRow({
   amountLabel,
   kcal,
   onDelete,
+  onPress,
 }: Props) {
   const { colors } = useTheme();
   const { t } = useTranslation();
@@ -45,10 +47,11 @@ export const DiaryEntryRow = memo(function DiaryEntryRow({
         </Pressable>
       )}
     >
-      <View
-        style={[styles.row, { backgroundColor: colors.surface }]}
-        accessible
+      <Pressable
+        onPress={() => onPress(id)}
+        accessibilityRole="button"
         accessibilityLabel={`${name}, ${amountLabel}, ${formatKcal(kcal)} ${t('diary.kcal')}`}
+        style={[styles.row, { backgroundColor: colors.surface }]}
       >
         <Text style={[styles.name, { color: colors.text }]} numberOfLines={1}>
           {name}
@@ -57,7 +60,7 @@ export const DiaryEntryRow = memo(function DiaryEntryRow({
           <Text style={[styles.amount, { color: colors.textMuted }]}>{amountLabel}</Text>
           <Text style={[styles.kcal, { color: colors.text }]}>{formatKcal(kcal)}</Text>
         </View>
-      </View>
+      </Pressable>
     </ReanimatedSwipeable>
   );
 });

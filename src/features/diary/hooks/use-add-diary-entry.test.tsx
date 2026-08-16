@@ -1,6 +1,6 @@
 import { renderHook } from '@testing-library/react-native';
 
-import { diaryRepository } from '@/data/repositories';
+import { diaryRepository, foodRepository } from '@/data/repositories';
 import type { FoodRecord } from '@/data/repositories/food.repository';
 import { localDay } from '@/lib/date';
 
@@ -8,9 +8,11 @@ import { useAddDiaryEntry } from './use-add-diary-entry';
 
 jest.mock('@/data/repositories', () => ({
   diaryRepository: { add: jest.fn() },
+  foodRepository: { markUsed: jest.fn() },
 }));
 
 const addMock = diaryRepository.add as unknown as jest.Mock;
+const markUsedMock = foodRepository.markUsed as unknown as jest.Mock;
 
 const DAY = localDay('2026-08-16');
 
@@ -60,5 +62,14 @@ describe('useAddDiaryEntry', () => {
     const input = addMock.mock.calls[0]?.[0];
     expect(input.nutrition.sugarsG).toBeNull();
     expect(input.nutrition.saltG).toBeNull();
+  });
+
+  it('incrémente use_count et last_used_at via markUsed (Fréquents/Récents)', async () => {
+    const { result } = await renderHook(() => useAddDiaryEntry());
+
+    result.current({ day: DAY, mealSlot: 'lunch', food: rice, amount: 150, unit: 'g' });
+
+    expect(markUsedMock).toHaveBeenCalledTimes(1);
+    expect(markUsedMock).toHaveBeenCalledWith('f1');
   });
 });

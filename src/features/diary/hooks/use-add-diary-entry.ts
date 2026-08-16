@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 
-import { diaryRepository } from '@/data/repositories';
+import { diaryRepository, foodRepository } from '@/data/repositories';
 import type { MealSlot } from '@/data/repositories/diary.repository';
 import type { FoodRecord } from '@/data/repositories/food.repository';
 import { snapshotFrom } from '@/domain/nutrition/macros';
@@ -26,7 +26,7 @@ export const useAddDiaryEntry = (): AddDiaryEntry =>
   useCallback((input: AddDiaryEntryInput): string => {
     const snapshot = snapshotFrom(input.food, input.amount);
 
-    return diaryRepository.add({
+    const id = diaryRepository.add({
       day: input.day,
       mealSlot: input.mealSlot,
       foodId: input.food.id,
@@ -46,4 +46,9 @@ export const useAddDiaryEntry = (): AddDiaryEntry =>
         saltG: snapshot.saltG,
       },
     });
+
+    // Dénormalisation assumée (data-model.md) : alimente « Fréquents »/« Récents ».
+    foodRepository.markUsed(input.food.id);
+
+    return id;
   }, []);

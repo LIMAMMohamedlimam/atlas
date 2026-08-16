@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlashList } from '@shopify/flash-list';
+import { router } from 'expo-router';
 import { useTranslation } from 'react-i18next';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Directions, Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -13,6 +14,7 @@ import { DiaryEntryRow } from './DiaryEntryRow';
 import { MacroBar } from './MacroBar';
 import { MacroRing } from './MacroRing';
 import { MealSection } from './MealSection';
+import { WaterTracker } from './WaterTracker';
 import { formatAmount, formatDay } from './format';
 import { useDeleteDiaryEntry } from './hooks/use-delete-diary-entry';
 import { useDiaryDay } from './hooks/use-diary-day';
@@ -28,7 +30,8 @@ type DiaryListItem =
       readonly kcal: number;
       readonly hasEntries: boolean;
     }
-  | { readonly kind: 'entry'; readonly entry: DiaryEntryRecord };
+  | { readonly kind: 'entry'; readonly entry: DiaryEntryRecord }
+  | { readonly kind: 'add'; readonly mealSlot: MealSlot };
 
 const UNDO_DURATION_MS = 5000;
 
@@ -98,6 +101,15 @@ export function DiaryDayScreen({ day }: Props) {
     [goNext, goPrevious],
   );
 
+  const openNewFood = useCallback(
+    (mealSlot: MealSlot) => router.push({ pathname: '/food/new', params: { mealSlot, day } }),
+    [day],
+  );
+  const openEdit = useCallback(
+    (entryId: string) => router.push({ pathname: '/diary/edit', params: { entryId } }),
+    [],
+  );
+
   // RG-9 — le futur est bloqué au jour même. La navigation l'empêche, mais on
   // garde un état défensif pour un `day` futur reçu par un autre chemin.
   if (isFutureDay(day)) {
@@ -142,6 +154,7 @@ export function DiaryDayScreen({ day }: Props) {
     for (const entry of meal.entries) {
       items.push({ kind: 'entry', entry });
     }
+    items.push({ kind: 'add', mealSlot: meal.mealSlot });
   }
 
   const header = (
@@ -241,21 +254,46 @@ export function DiaryDayScreen({ day }: Props) {
     <View style={[styles.screen, { backgroundColor: colors.background }]}>
       <FlashList
         data={items}
-        keyExtractor={(item) => (item.kind === 'meal' ? `meal-${item.mealSlot}` : item.entry.id)}
-        renderItem={({ item }) =>
-          item.kind === 'meal' ? (
-            <MealSection mealSlot={item.mealSlot} kcal={item.kcal} hasEntries={item.hasEntries} />
-          ) : (
+        keyExtractor={(item) =>
+          item.kind === 'meal'
+            ? `meal-${item.mealSlot}`
+            : item.kind === 'add'
+              ? `add-${item.mealSlot}`
+              : item.entry.id
+        }
+        renderItem={({ item }) => {
+          if (item.kind === 'meal') {
+            return (
+              <MealSection mealSlot={item.mealSlot} kcal={item.kcal} hasEntries={item.hasEntries} />
+            );
+          }
+          if (item.kind === 'add') {
+            return (
+              <Pressable
+                onPress={() => openNewFood(item.mealSlot)}
+                accessibilityRole="button"
+                accessibilityLabel={t('diary.addTitle')}
+                style={styles.addRow}
+              >
+                <Text style={[styles.addLabel, { color: colors.accent }]}>
+                  + {t('diary.addTitle')}
+                </Text>
+              </Pressable>
+            );
+          }
+          return (
             <DiaryEntryRow
               id={item.entry.id}
               name={item.entry.foodNameSnapshot}
               amountLabel={`${formatAmount(item.entry.quantity)} ${item.entry.unit}`}
               kcal={item.entry.kcal}
               onDelete={handleDelete}
+              onPress={openEdit}
             />
-          )
-        }
+          );
+        }}
         ListHeaderComponent={header}
+        ListFooterComponent={<WaterTracker day={day} targetMl={target?.waterMl ?? null} />}
         contentContainerStyle={styles.content}
       />
 
@@ -323,6 +361,12 @@ const styles = StyleSheet.create({
   },
   emptyTitle: typography.title,
   emptyMessage: typography.body,
+  addRow: {
+    minHeight: MIN_TOUCH_TARGET,
+    paddingHorizontal: spacing.lg,
+    justifyContent: 'center',
+  },
+  addLabel: { ...typography.label, fontWeight: '600' },
   undoBanner: {
     position: 'absolute',
     left: spacing.lg,

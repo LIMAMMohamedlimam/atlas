@@ -14,15 +14,15 @@ jest.mock('drizzle-orm/expo-sqlite', () => ({
 }));
 
 jest.mock('@/data/repositories', () => ({
-  diaryRepository: { listByDayQuery: jest.fn(() => ({})) },
-  nutritionTargetsRepository: { forDay: jest.fn() },
+  diaryRepository: { listByDayQuery: jest.fn(() => ({ __query: 'entries' })) },
+  nutritionTargetsRepository: { forDayQuery: jest.fn(() => ({ __query: 'target' })) },
 }));
 
 // Mocks assouplis : les tests renvoient des données de test sans reconstruire
 // les types Drizzle exacts (`as unknown` réduit, puis assouplit, le type réel).
 const useLiveQueryMock = useLiveQuery as unknown as jest.Mock;
-const forDayMock = nutritionTargetsRepository.forDay as unknown as jest.Mock;
 const listByDayQueryMock = diaryRepository.listByDayQuery as unknown as jest.Mock;
+const forDayQueryMock = nutritionTargetsRepository.forDayQuery as unknown as jest.Mock;
 
 const DAY = localDay('2026-08-16');
 
@@ -61,47 +61,56 @@ const target = (): TargetRecord => ({
   belowSafetyFloor: 0,
 });
 
+type LiveResult = { data: unknown; error?: Error; updatedAt: Date | undefined };
+
+let entriesResult: LiveResult;
+let targetResult: LiveResult;
+
 beforeEach(() => {
   jest.clearAllMocks();
-  useLiveQueryMock.mockReturnValue({ data: [], error: undefined, updatedAt: new Date() });
-  forDayMock.mockReturnValue(undefined);
+  entriesResult = { data: [], updatedAt: new Date() };
+  targetResult = { data: [], updatedAt: new Date() };
+  useLiveQueryMock.mockImplementation((query: { __query?: string }) =>
+    query?.__query === 'target' ? targetResult : entriesResult,
+  );
 });
 
 describe('useDiaryDay', () => {
-  it('est en chargement tant que la première lecture n’est pas résolue', async () => {
-    useLiveQueryMock.mockReturnValue({ data: [], error: undefined, updatedAt: undefined });
+  it('est en chargement tant qu’une des deux lectures n’est pas résolue', async () => {
+    entriesResult = { data: [], updatedAt: undefined };
+    targetResult = { data: [], updatedAt: new Date() };
 
     const { result } = await renderHook(() => useDiaryDay(DAY));
 
     expect(result.current).toEqual({ state: 'loading' });
   });
 
-  it('remonte l’erreur de la live query', async () => {
+  it('remonte l’erreur de la live query des entrées', async () => {
     const boom = new Error('boom');
-    useLiveQueryMock.mockReturnValue({ data: [], error: boom, updatedAt: new Date() });
+    entriesResult = { data: [], error: boom, updatedAt: new Date() };
 
     const { result } = await renderHook(() => useDiaryDay(DAY));
 
     expect(result.current).toEqual({ state: 'error', error: boom });
   });
 
-  it('interroge la table diary_entries pour le jour demandé, sans agrégat SQL', async () => {
+  it('interroge la table diary_entries ET nutrition_targets pour le jour demandé', async () => {
     await renderHook(() => useDiaryDay(DAY));
 
     expect(listByDayQueryMock).toHaveBeenCalledWith(DAY);
+    expect(forDayQueryMock).toHaveBeenCalledWith(DAY);
   });
 
   it('groupe les entrées par créneau, dans l’ordre d’affichage', async () => {
-    useLiveQueryMock.mockReturnValue({
+    entriesResult = {
       data: [
         makeEntry('1', 'lunch'),
         makeEntry('2', 'breakfast'),
         makeEntry('3', 'lunch'),
         makeEntry('4', 'snack'),
       ],
-      error: undefined,
       updatedAt: new Date(),
-    });
+    };
 
     const { result } = await renderHook(() => useDiaryDay(DAY));
 
@@ -118,11 +127,10 @@ describe('useDiaryDay', () => {
   });
 
   it('calcule les totaux via sumEntries, y compris le sous-total par créneau', async () => {
-    useLiveQueryMock.mockReturnValue({
+    entriesResult = {
       data: [makeEntry('1', 'lunch'), makeEntry('2', 'lunch')],
-      error: undefined,
       updatedAt: new Date(),
-    });
+    };
 
     const { result } = await renderHook(() => useDiaryDay(DAY));
 
@@ -134,11 +142,10 @@ describe('useDiaryDay', () => {
   });
 
   it('signale des données incomplètes dès qu’une macro manque (RG-7)', async () => {
-    useLiveQueryMock.mockReturnValue({
+    entriesResult = {
       data: [makeEntry('1', 'lunch', { proteinG: null, carbsG: null, fatG: null })],
-      error: undefined,
       updatedAt: new Date(),
-    });
+    };
 
     const { result } = await renderHook(() => useDiaryDay(DAY));
 
@@ -149,17 +156,15 @@ describe('useDiaryDay', () => {
     expect(result.current.totals.proteinG).toBe(0);
   });
 
-  it('lit l’objectif en vigueur pour le jour demandé (RG-8)', async () => {
-    const goal = target();
-    forDayMock.mockReturnValue(goal);
+  it('lit l’objectif en vigueur via la live query des objectifs (RG-8)', async () => {
+    targetResult = { data: [target()], updatedAt: new Date() };
 
     const { result } = await renderHook(() => useDiaryDay(DAY));
 
     expect(result.current.state).toBe('ready');
     if (result.current.state !== 'ready') return;
 
-    expect(result.current.target).toBe(goal);
-    expect(forDayMock).toHaveBeenCalledWith(DAY);
+    expect(result.current.target?.kcal).toBe(2400);
   });
 
   it('renvoie target indéfini quand aucun objectif n’est encore défini', async () => {
