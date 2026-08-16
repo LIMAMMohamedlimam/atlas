@@ -40,7 +40,7 @@ module.exports = {
   ],
   coverageThreshold: {
     './src/lib/': { statements: 90, branches: 90, functions: 90, lines: 90 },
-    // Le seuil de 90 % sur ./src/domain/ sera ajouté avec ses premiers modules (M1) :
-    // Jest échoue si un chemin de seuil ne contient aucun fichier.
+    // Activé avec les premiers modules du domaine (M1, nutrition).
+    './src/domain/': { statements: 90, branches: 90, functions: 90, lines: 90 },
   },
 };
