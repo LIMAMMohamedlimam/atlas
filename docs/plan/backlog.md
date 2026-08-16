@@ -44,6 +44,7 @@ Format : `[date] Titre — description courte. Valeur / Coût.`
 
 ## Améliorations techniques différées
 
+- **[2026-08-16] Parcours E2E Maestro (5 parcours, `definition-of-done.md:65`)** — exigés pour clore un jalon, mais Maestro n'est pas installé et aucun dossier `.maestro/` n'existe. Reporté explicitement ici plutôt que silencieusement omis (règle de la mauvaise foi). *Coût : moyen (installation + 5 scripts + un run en CI). À faire avant la sortie v1.*
 - **[2026-08-09] Chiffrement de la base (SQLCipher)** — à reconsidérer si un verrouillage de l'app est ajouté. Voir [security-privacy.md](../architecture/security-privacy.md#stockage).
 - **[2026-08-09] Totaux quotidiens matérialisés** — uniquement si les mesures montrent un dépassement du budget de 100 ms.
 - **[2026-08-09] Tests de rendu visuel** — trop de faux positifs pour un projet solo, à revoir si l'interface se stabilise.
