@@ -99,3 +99,120 @@ export const checkManualCoherence = (
     suggestedCarbsG: Math.max(0, Math.round(remainingKcal / KCAL_PER_G_CARBS)),
   };
 };
+
+/** Valeurs nutritionnelles d'un aliment, pour 100 g ou 100 ml. `null` = inconnu. */
+export type FoodNutritionPer100 = {
+  readonly energyKcal: number;
+  readonly proteinG: number | null;
+  readonly carbsG: number | null;
+  readonly fatG: number | null;
+  readonly sugarsG: number | null;
+  readonly saturatedFatG: number | null;
+  readonly fiberG: number | null;
+  readonly saltG: number | null;
+};
+
+/** Valeurs figées pour UNE entrée — déjà mises à l'échelle de la quantité saisie. */
+export type EntryNutritionSnapshot = {
+  readonly kcal: number;
+  readonly proteinG: number | null;
+  readonly carbsG: number | null;
+  readonly fatG: number | null;
+  readonly sugarsG: number | null;
+  readonly saturatedFatG: number | null;
+  readonly fiberG: number | null;
+  readonly saltG: number | null;
+};
+
+/** Met une valeur pour 100 g/ml à l'échelle d'une portion. `null` reste `null`. */
+const scaleToPortion = (valuePer100: number | null, grams: number): number | null =>
+  valuePer100 === null ? null : (valuePer100 * grams) / 100;
+
+/**
+ * ADR-0005 — Construit le snapshot figé d'une entrée de journal à partir des
+ * valeurs pour 100 g/ml de l'aliment courant. C'est le SEUL endroit qui construit
+ * ces valeurs. Une valeur source `null` reste `null` : jamais 0, jamais inventée.
+ */
+export const snapshotFrom = (
+  foodPer100: FoodNutritionPer100,
+  grams: number,
+): EntryNutritionSnapshot => ({
+  kcal: (foodPer100.energyKcal * grams) / 100,
+  proteinG: scaleToPortion(foodPer100.proteinG, grams),
+  carbsG: scaleToPortion(foodPer100.carbsG, grams),
+  fatG: scaleToPortion(foodPer100.fatG, grams),
+  sugarsG: scaleToPortion(foodPer100.sugarsG, grams),
+  saturatedFatG: scaleToPortion(foodPer100.saturatedFatG, grams),
+  fiberG: scaleToPortion(foodPer100.fiberG, grams),
+  saltG: scaleToPortion(foodPer100.saltG, grams),
+});
+
+export type MacrosPer100 = {
+  readonly proteinG: number | null;
+  readonly carbsG: number | null;
+  readonly fatG: number | null;
+};
+
+/**
+ * RG-6 — Calories estimées depuis les macros en 4/4/9, faute de valeur fournie
+ * par la source. L'appelant marque alors `energy_is_estimated` sur `foods`.
+ *
+ * Les TROIS macros sont exigées. Estimer à partir de deux d'entre elles en
+ * traitant la troisième comme 0 produirait une valeur systématiquement
+ * sous-évaluée — donc fausse, pas approximative. CLAUDE.md est catégorique :
+ * « un chiffre faux est pire qu'un chiffre manquant ». Et le risque est ici
+ * durable : cette valeur alimente `foods.energy_kcal`, qui est NOT NULL, puis se
+ * propage dans chaque entrée de journal figée et dans tous les totaux.
+ */
+export const estimateEnergyFromMacros = ({
+  proteinG,
+  carbsG,
+  fatG,
+}: MacrosPer100): number | null => {
+  if (proteinG === null || carbsG === null || fatG === null) return null;
+
+  return proteinG * KCAL_PER_G_PROTEIN + carbsG * KCAL_PER_G_CARBS + fatG * KCAL_PER_G_FAT;
+};
+
+/** Entrée minimale requise pour agréger les totaux d'un jour. */
+export type EntryMacros = {
+  readonly kcal: number;
+  readonly proteinG: number | null;
+  readonly carbsG: number | null;
+  readonly fatG: number | null;
+};
+
+export type DaySummary = {
+  readonly kcal: number;
+  readonly proteinG: number;
+  readonly carbsG: number;
+  readonly fatG: number;
+  /** RG-7 — vrai dès qu'une entrée a une macro inconnue. */
+  readonly hasIncompleteData: boolean;
+};
+
+/**
+ * RG-7 — Totaux du jour. Les macros manquantes comptent comme 0 dans la somme,
+ * mais `hasIncompleteData` passe à vrai dès qu'une entrée a une macro inconnue :
+ * l'UI doit alors signaler « données incomplètes » plutôt qu'un total faussement
+ * précis.
+ */
+export const sumEntries = (entries: readonly EntryMacros[]): DaySummary => {
+  let kcal = 0;
+  let proteinG = 0;
+  let carbsG = 0;
+  let fatG = 0;
+  let hasIncompleteData = false;
+
+  for (const entry of entries) {
+    kcal += entry.kcal;
+    proteinG += entry.proteinG ?? 0;
+    carbsG += entry.carbsG ?? 0;
+    fatG += entry.fatG ?? 0;
+    if (entry.proteinG === null || entry.carbsG === null || entry.fatG === null) {
+      hasIncompleteData = true;
+    }
+  }
+
+  return { kcal, proteinG, carbsG, fatG, hasIncompleteData };
+};

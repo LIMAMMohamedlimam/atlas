@@ -6,8 +6,12 @@ import { kilocalories, kilograms } from '@/lib/units';
 import {
   calculateMacroTargets,
   checkManualCoherence,
+  estimateEnergyFromMacros,
   kcalFromMacros,
   MANUAL_COHERENCE_TOLERANCE,
+  snapshotFrom,
+  sumEntries,
+  type FoodNutritionPer100,
 } from './macros';
 
 describe('calculateMacroTargets — répartition par défaut', () => {
@@ -121,5 +125,114 @@ describe('checkManualCoherence (RG-9)', () => {
 
   it('expose la tolérance utilisée par la spec', () => {
     expect(MANUAL_COHERENCE_TOLERANCE).toBe(0.02);
+  });
+});
+
+describe('snapshotFrom — figement des valeurs (ADR-0005, CA-2)', () => {
+  const rice: FoodNutritionPer100 = {
+    energyKcal: 130,
+    proteinG: 2.7,
+    carbsG: 28,
+    fatG: 0.3,
+    sugarsG: null,
+    saturatedFatG: null,
+    fiberG: null,
+    saltG: null,
+  };
+
+  it('met 150 g de riz à 195 kcal et les macros à l’échelle (CA-2)', () => {
+    const snapshot = snapshotFrom(rice, 150);
+
+    expect(snapshot.kcal).toBe(195);
+    expect(snapshot.proteinG).toBeCloseTo(4.05, 6);
+    expect(snapshot.carbsG).toBe(42);
+    expect(snapshot.fatG).toBeCloseTo(0.45, 6);
+  });
+
+  it('laisse une valeur source null à null, jamais 0 ni inventée', () => {
+    const snapshot = snapshotFrom(rice, 100);
+
+    expect(snapshot.sugarsG).toBeNull();
+    expect(snapshot.saltG).toBeNull();
+  });
+
+  it('gère grams = 0 sans produire de NaN', () => {
+    const snapshot = snapshotFrom(rice, 0);
+
+    expect(snapshot.kcal).toBe(0);
+    expect(snapshot.proteinG).toBe(0);
+  });
+
+  it('met un aliment en ml à l’échelle de la même façon', () => {
+    const milk: FoodNutritionPer100 = {
+      energyKcal: 46,
+      proteinG: 3.4,
+      carbsG: 4.8,
+      fatG: 1.6,
+      sugarsG: 4.8,
+      saturatedFatG: 1,
+      fiberG: null,
+      saltG: 0.1,
+    };
+    const snapshot = snapshotFrom(milk, 200);
+
+    expect(snapshot.kcal).toBeCloseTo(92, 6);
+    expect(snapshot.proteinG).toBeCloseTo(6.8, 6);
+    expect(snapshot.sugarsG).toBeCloseTo(9.6, 6);
+  });
+});
+
+describe('estimateEnergyFromMacros (RG-6)', () => {
+  it('calcule 4/4/9 quand les trois macros sont connues', () => {
+    expect(estimateEnergyFromMacros({ proteinG: 10, carbsG: 20, fatG: 5 })).toBe(165);
+  });
+
+  it('accepte des macros à 0, qui sont une information et non une absence', () => {
+    expect(estimateEnergyFromMacros({ proteinG: 0, carbsG: 0, fatG: 10 })).toBe(90);
+  });
+
+  it('refuse d’estimer dès qu’une seule macro manque', () => {
+    // Traiter l'inconnue comme 0 donnerait 40 kcal pour 10 g de protéines : une
+    // valeur knowablement trop basse, qui partirait ensuite dans foods.energy_kcal
+    // (NOT NULL) puis dans tout l'historique figé. Mieux vaut rien que faux.
+    expect(estimateEnergyFromMacros({ proteinG: 10, carbsG: null, fatG: null })).toBeNull();
+    expect(estimateEnergyFromMacros({ proteinG: 10, carbsG: 20, fatG: null })).toBeNull();
+    expect(estimateEnergyFromMacros({ proteinG: null, carbsG: 20, fatG: 5 })).toBeNull();
+  });
+
+  it('renvoie null quand aucune macro n’est connue', () => {
+    expect(estimateEnergyFromMacros({ proteinG: null, carbsG: null, fatG: null })).toBeNull();
+  });
+});
+
+describe('sumEntries (RG-7)', () => {
+  it('additionne calories et macros sur plusieurs entrées', () => {
+    const totals = sumEntries([
+      { kcal: 195, proteinG: 4.05, carbsG: 42, fatG: 0.45 },
+      { kcal: 65, proteinG: 1.35, carbsG: 14, fatG: 0.15 },
+    ]);
+
+    expect(totals.kcal).toBe(260);
+    expect(totals.proteinG).toBeCloseTo(5.4, 6);
+    expect(totals.carbsG).toBe(56);
+    expect(totals.hasIncompleteData).toBe(false);
+  });
+
+  it('compte les macros manquantes comme 0 mais signale des données incomplètes', () => {
+    const totals = sumEntries([{ kcal: 300, proteinG: null, carbsG: null, fatG: null }]);
+
+    expect(totals.kcal).toBe(300);
+    expect(totals.proteinG).toBe(0);
+    expect(totals.hasIncompleteData).toBe(true);
+  });
+
+  it('renvoie des zéros sur une liste vide, sans données incomplètes', () => {
+    expect(sumEntries([])).toEqual({
+      kcal: 0,
+      proteinG: 0,
+      carbsG: 0,
+      fatG: 0,
+      hasIncompleteData: false,
+    });
   });
 });
