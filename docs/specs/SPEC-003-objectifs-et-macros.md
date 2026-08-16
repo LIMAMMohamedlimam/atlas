@@ -162,5 +162,6 @@ Dans les paramètres : un écran « Objectifs » avec bascule « Calculé / Manu
 
 ## 10. Questions ouvertes
 
-- [ ] 2026-08-09 — Proposer Katch-McArdle (basée sur la masse maigre) pour les utilisateurs qui connaissent leur taux de masse grasse ? *Plus précis pour la cible, mais un mode de calcul de plus à maintenir.*
+- [x] 2026-08-09 — Proposer Katch-McArdle (basée sur la masse maigre) pour les utilisateurs qui connaissent leur taux de masse grasse ? → **Non en v1** (décidé le 2026-08-16) : un deuxième mode de calcul à maintenir pour un gain limité à une minorité d'utilisateurs. Reporté au backlog.
+- [ ] 2026-08-16 — **Quel plancher de sécurité pour `sex = 'unspecified'` ?** RG-4 fixe 1500 kcal (homme) et 1200 (femme) mais ne dit rien du troisième cas. L'implémentation retient **1350 kcal**, la moyenne des deux, par cohérence avec RG-1 qui moyenne déjà les deux formules dans ce cas. À confirmer lors de la relecture des textes de sécurité.
 - [ ] 2026-08-09 — Faire relire le texte des avertissements de sécurité par une source compétente avant publication.

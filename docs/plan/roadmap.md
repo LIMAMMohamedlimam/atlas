@@ -65,6 +65,8 @@ Total : **14 à 20 semaines**. Un projet personnel dépasse presque toujours son
 
 **Le vrai test :** l'utiliser réellement pendant trois jours. Ce qui agace ici agacera dix fois plus plus tard.
 
+**État :** livré le 2026-08-16 (v0.2.0) — sauf les 5 parcours E2E Maestro, reportés au backlog (voir `docs/plan/backlog.md`), et les mesures de performance sur appareil réel, à faire avant la sortie.
+
 ---
 
 ## M2 — Catalogue en ligne et scan

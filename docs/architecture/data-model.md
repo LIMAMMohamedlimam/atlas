@@ -24,6 +24,24 @@ Autres règles :
 - **Clés étrangères** : `PRAGMA foreign_keys = ON` obligatoire à l'ouverture (SQLite ne l'active pas par défaut).
 - **Enums** : `TEXT` avec `CHECK (col IN (...))`. Lisible dans un dump, contrôlé par la base.
 
+## Échelonnement par jalon
+
+Ce document décrit le schéma **cible**. La base réelle le construit jalon par jalon,
+et les éléments non encore créés sont marqués **⏳ Mx** dans le SQL ci-dessous.
+
+| Migration | Jalon | Contenu |
+|---|---|---|
+| `0000` | M0 | `app_settings`, `sync_outbox` |
+| `0001` | M1 | `user_profile`, `nutrition_targets`, `body_measurements`, `foods`, `diary_entries`, `water_logs` |
+| à venir | M2 | `food_portions`, `diary_entries.portion_id`, `foods_fts` + ses triggers |
+| à venir | M3 | `recipes`, `recipe_items`, `saved_meals`, `saved_meal_items`, `foods.recipe_id` |
+| à venir | M4 | tables d'entraînement |
+
+Une colonne reportée s'ajoute par `ALTER TABLE ADD COLUMN`, sans reconstruction ni
+risque pour les données. Une contrainte `CHECK`, elle, **ne se modifie pas** en SQLite
+sans reconstruire la table : les listes de valeurs sont donc écrites complètes dès le
+départ, y compris pour des valeurs pas encore utilisées (`foods.source = 'recipe'`).
+
 ---
 
 ## Profil et objectifs
@@ -46,6 +64,18 @@ CREATE TABLE user_profile (
   updated_at    INTEGER NOT NULL
 );
 -- Le poids courant n'est PAS ici : il vient de body_measurements (source unique).
+```
+
+> **Deux entorses assumées aux conventions générales.** `user_profile` n'a ni UUIDv7
+> ni `deleted_at`, alors que CLAUDE.md les impose à toute table métier. C'est une
+> ligne unique (`id = 'singleton'`) : elle n'a rien à trier ni à fusionner entre
+> appareils, et aucun scénario de SPEC-008 ne la supprime — RG-15 ne propose que
+> trois effacements partiels (journal, séances, cache d'aliments) et RG-14 supprime
+> physiquement la base. Pour « effacer mes données personnelles » sans toucher au
+> journal, on remet les colonnes à `NULL` : c'est exactement l'état d'un utilisateur
+> ayant choisi « je connais mes chiffres » (CA-7 SPEC-003).
+
+```sql
 
 -- Objectifs historisés : on n'écrase jamais, on ajoute une ligne.
 CREATE TABLE nutrition_targets (
@@ -132,7 +162,7 @@ CREATE TABLE foods (
   energy_is_estimated INTEGER NOT NULL DEFAULT 0, -- kcal recalculées depuis les macros (RG-6 SPEC-001)
   data_quality  INTEGER,                        -- 0-100, complétude, pour le tri des résultats
   is_verified   INTEGER NOT NULL DEFAULT 0,     -- corrigé/validé par l'utilisateur
-  recipe_id     TEXT REFERENCES recipes(id),    -- non NULL si source = 'recipe'
+  recipe_id     TEXT REFERENCES recipes(id),    -- non NULL si source = 'recipe'   ⏳ M3
 
   last_used_at  INTEGER,                        -- alimente « Récents »
   use_count     INTEGER NOT NULL DEFAULT 0,     -- alimente « Fréquents »
@@ -147,7 +177,7 @@ CREATE INDEX idx_foods_barcode  ON foods (barcode) WHERE barcode IS NOT NULL;
 CREATE INDEX idx_foods_frequent ON foods (use_count DESC, last_used_at DESC)
   WHERE deleted_at IS NULL;
 
--- Recherche plein texte locale : c'est elle qui rend l'app utilisable hors ligne.
+-- Recherche plein texte locale : c'est elle qui rend l'app utilisable hors ligne.   ⏳ M2
 CREATE VIRTUAL TABLE foods_fts USING fts5 (
   name, brand,
   content = 'foods', content_rowid = 'rowid',
@@ -159,6 +189,9 @@ CREATE VIRTUAL TABLE foods_fts USING fts5 (
 > `use_count` et `last_used_at` sont **dénormalisés volontairement** : les recalculer à chaque ouverture de l'écran de recherche coûterait un balayage complet de `diary_entries`. Ils sont incrémentés à chaque ajout au journal.
 
 ### Portions
+
+Toute cette section arrive en **⏳ M2**, avec les portions nommées de SPEC-002.
+En M1 les quantités se saisissent en grammes ou millilitres.
 
 ```sql
 CREATE TABLE food_portions (
@@ -187,7 +220,7 @@ CREATE TABLE diary_entries (
   food_id     TEXT REFERENCES foods(id),        -- référence indicative, peut pointer vers un aliment supprimé
   quantity    REAL NOT NULL,                    -- tel que saisi : 2
   unit        TEXT NOT NULL,                    -- tel que saisi : 'slice', 'g', 'ml'
-  portion_id  TEXT REFERENCES food_portions(id),
+  portion_id  TEXT REFERENCES food_portions(id),                                    -- ⏳ M2
   grams       REAL NOT NULL,                    -- résolu : 60. TOUS les totaux partent d'ici.
 
   -- ── SNAPSHOT : figé à la saisie, jamais recalculé (ADR-0005) ──

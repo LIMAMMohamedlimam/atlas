@@ -5,6 +5,7 @@
  * (docs/engineering/definition-of-done.md#accessibilité). Les couleurs sémantiques
  * ci-dessous accompagnent toujours un texte ou une icône.
  */
+import type { TextStyle } from 'react-native';
 
 export const palette = {
   light: {
@@ -61,13 +62,13 @@ export const radius = {
   pill: 999,
 } as const;
 
-export const typography = {
+export const typography: Record<'display' | 'title' | 'body' | 'label' | 'mono', TextStyle> = {
   display: { fontSize: 34, fontWeight: '700' },
   title: { fontSize: 22, fontWeight: '600' },
   body: { fontSize: 16, fontWeight: '400' },
   label: { fontSize: 13, fontWeight: '500' },
   mono: { fontSize: 16, fontWeight: '600', fontVariant: ['tabular-nums'] },
-} as const;
+};
 
 /** Taille minimale d'une cible tactile, en points (SPEC-001 §9). */
 export const MIN_TOUCH_TARGET = 48;
